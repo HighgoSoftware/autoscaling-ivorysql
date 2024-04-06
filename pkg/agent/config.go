@@ -83,14 +83,20 @@ type ScalingConfig struct {
 	DefaultConfig api.ScalingConfig `json:"defaultConfig"`
 }
 
-// MetricsConfig defines a few parameters for metrics requests to the VM
 type MetricsConfig struct {
-	// Port is the port that VMs are expected to provide metrics on
+	System MetricsSourceConfig[core.SystemMetricNames] `json:"system"`
+}
+
+// MetricsConfig defines a few parameters for metrics requests to the VM
+type MetricsSourceConfig[N any] struct {
+	// Port is the port that VMs are expected to provide the metrics on
+	//
+	// For system metrics, vm-builder installs vector (from vector.dev) to expose them on port 9100.
 	Port uint16 `json:"port"`
 	// Names gives the names of the metrics representing the values we want to fetch
 	//
 	// These are defined externally to avoid having weird constants in the code.
-	Names core.MetricNames `json:"names"`
+	Names N `json:"names"`
 	// RequestTimeoutSeconds gives the timeout duration, in seconds, for metrics requests
 	RequestTimeoutSeconds uint `json:"requestTimeoutSeconds"`
 	// SecondsBetweenRequests sets the number of seconds to wait between metrics requests
@@ -175,10 +181,10 @@ func (c *Config) validate() error {
 	erc.Whenf(ec, c.Billing.Clients.HTTP != nil && c.Billing.Clients.HTTP.URL == "", emptyTmpl, ".billing.clients.http.url")
 	erc.Whenf(ec, c.DumpState != nil && c.DumpState.Port == 0, zeroTmpl, ".dumpState.port")
 	erc.Whenf(ec, c.DumpState != nil && c.DumpState.TimeoutSeconds == 0, zeroTmpl, ".dumpState.timeoutSeconds")
-	erc.Whenf(ec, c.Metrics.Port == 0, zeroTmpl, ".metrics.port")
-	ec.Add(c.Metrics.Names.Validate())
-	erc.Whenf(ec, c.Metrics.RequestTimeoutSeconds == 0, zeroTmpl, ".metrics.requestTimeoutSeconds")
-	erc.Whenf(ec, c.Metrics.SecondsBetweenRequests == 0, zeroTmpl, ".metrics.secondsBetweenRequests")
+	erc.Whenf(ec, c.Metrics.System.Port == 0, zeroTmpl, ".metrics.system.port")
+	ec.Add(c.Metrics.System.Names.Validate())
+	erc.Whenf(ec, c.Metrics.System.RequestTimeoutSeconds == 0, zeroTmpl, ".metrics.system.requestTimeoutSeconds")
+	erc.Whenf(ec, c.Metrics.System.SecondsBetweenRequests == 0, zeroTmpl, ".metrics.system.secondsBetweenRequests")
 	erc.Whenf(ec, c.Scaling.ComputeUnit.VCPU == 0, zeroTmpl, ".scaling.computeUnit.vCPUs")
 	erc.Whenf(ec, c.Scaling.ComputeUnit.Mem == 0, zeroTmpl, ".scaling.computeUnit.mem")
 	erc.Whenf(ec, c.NeonVM.RequestTimeoutSeconds == 0, zeroTmpl, ".scaling.requestTimeoutSeconds")

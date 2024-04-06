@@ -13,12 +13,12 @@ import (
 	"github.com/neondatabase/autoscaling/pkg/api"
 )
 
-type Metrics struct {
+type SystemMetrics struct {
 	LoadAverage1Min  float64
 	MemoryUsageBytes float64
 }
 
-func (m Metrics) ToAPI() api.Metrics {
+func (m SystemMetrics) ToAPI() api.Metrics {
 	return api.Metrics{
 		LoadAverage1Min:  float32(m.LoadAverage1Min),
 		LoadAverage5Min:  nil,
@@ -26,14 +26,14 @@ func (m Metrics) ToAPI() api.Metrics {
 	}
 }
 
-type MetricNames struct {
+type SystemMetricNames struct {
 	Load1        string `json:"load1"`
 	Load5        string `json:"load5"`
 	MemAvailable string `json:"memAvailable"`
 	MemTotal     string `json:"memTotal"`
 }
 
-func (n MetricNames) Validate() error {
+func (n SystemMetricNames) Validate() error {
 	ec := &erc.Collector{}
 
 	const emptyTmpl = "field %q cannot be empty"
@@ -70,7 +70,7 @@ func ParseMetrics[M FromPrometheus[C], C any](content io.Reader, config C, metri
 	return nil
 }
 
-//nolint:unused // used by (*Metrics).fromPrometheus()
+//nolint:unused // used by (*SystemMetrics).fromPrometheus()
 func extractFloatGauge(mf *promtypes.MetricFamily) (float64, error) {
 	if mf.GetType() != promtypes.MetricType_GAUGE {
 		return 0, fmt.Errorf("wrong metric type: expected %s but got %s", promtypes.MetricType_GAUGE, mf.GetType())
@@ -83,15 +83,15 @@ func extractFloatGauge(mf *promtypes.MetricFamily) (float64, error) {
 
 // Helper function to return an error for a missing metric
 //
-//nolint:unused // used by (*Metrics).fromPrometheus()
+//nolint:unused // used by (*SystemMetrics).fromPrometheus()
 func missingMetric(name string) error {
 	return fmt.Errorf("missing expected metric %s", name)
 }
 
-// fromPrometheus implements FromPrometheus, so Metrics can be used with ParseMetrics.
+// fromPrometheus implements FromPrometheus, so SystemMetrics can be used with ParseMetrics.
 //
 //nolint:unused // https://github.com/dominikh/go-tools/issues/1294
-func (m *Metrics) fromPrometheus(names MetricNames, mfs map[string]*promtypes.MetricFamily) error {
+func (m *SystemMetrics) fromPrometheus(names SystemMetricNames, mfs map[string]*promtypes.MetricFamily) error {
 	ec := &erc.Collector{}
 
 	getFloat := func(metricName string) float64 {
@@ -105,7 +105,7 @@ func (m *Metrics) fromPrometheus(names MetricNames, mfs map[string]*promtypes.Me
 		}
 	}
 
-	tmp := Metrics{
+	tmp := SystemMetrics{
 		LoadAverage1Min: getFloat(names.Load1),
 		// Add an extra 100 MiB to account for kernel memory usage
 		MemoryUsageBytes: getFloat(names.MemTotal) - getFloat(names.MemAvailable) + 100*(1<<20),

@@ -250,10 +250,18 @@ func (r *Runner) Run(ctx context.Context, logger *zap.Logger, vmInfoUpdated util
 			}
 		}
 	})
-	r.spawnBackgroundWorker(ctx, logger, "get metrics", func(c context.Context, l *zap.Logger) {
-		r.getMetricsLoop(c, l, func(metrics core.Metrics, withLock func()) {
-			ecwc.Updater().UpdateMetrics(metrics, withLock)
-		})
+	r.spawnBackgroundWorker(ctx, logger, "get system metrics", func(c context.Context, l *zap.Logger) {
+		getMetricsLoop(
+			r,
+			c,
+			l,
+			"system",
+			func() *core.SystemMetrics { return new(core.SystemMetrics) },
+			r.global.config.Metrics.System,
+			func(metrics *core.SystemMetrics, withLock func()) {
+				ecwc.Updater().UpdateSystemMetrics(*metrics, withLock)
+			},
+		)
 	})
 	r.spawnBackgroundWorker(ctx, logger.Named("vm-monitor"), "vm-monitor reconnection loop", func(c context.Context, l *zap.Logger) {
 		r.connectToMonitorLoop(c, l, monitorGeneration, monitorStateCallbacks{
@@ -346,17 +354,24 @@ func (r *Runner) spawnBackgroundWorker(ctx context.Context, logger *zap.Logger, 
 // getMetricsLoop repeatedly attempts to fetch metrics from the VM
 //
 // Every time metrics are successfully fetched, the value is recorded with newMetrics.
-func (r *Runner) getMetricsLoop(
+func getMetricsLoop[M core.FromPrometheus[C], C any](
+	r *Runner,
 	ctx context.Context,
 	logger *zap.Logger,
-	newMetrics func(metrics core.Metrics, withLock func()),
+	kind string,
+	emptyMetrics func() M,
+	config MetricsSourceConfig[C],
+	newMetrics func(metrics M, withLock func()),
 ) {
-	timeout := time.Second * time.Duration(r.global.config.Metrics.RequestTimeoutSeconds)
-	waitBetweenDuration := time.Second * time.Duration(r.global.config.Metrics.SecondsBetweenRequests)
+	timeout := time.Second * time.Duration(config.RequestTimeoutSeconds)
+	waitBetweenDuration := time.Second * time.Duration(config.SecondsBetweenRequests)
 
-	randomStartWait := util.NewTimeRange(time.Second, 0, int(r.global.config.Metrics.SecondsBetweenRequests)).Random()
+	randomStartWait := util.NewTimeRange(time.Second, 0, int(config.SecondsBetweenRequests)).Random()
 
-	logger.Info("Sleeping for random delay before making first metrics request", zap.Duration("delay", randomStartWait))
+	logger.Info(
+		fmt.Sprintf("Sleeping for random delay before making first %s metrics request", kind),
+		zap.Duration("delay", randomStartWait),
+	)
 
 	select {
 	case <-ctx.Done():
@@ -365,16 +380,15 @@ func (r *Runner) getMetricsLoop(
 	}
 
 	for {
-		metrics, err := r.doMetricsRequest(ctx, logger, timeout, r.global.config.Metrics.Names)
+		metrics := emptyMetrics() // dependency-injected because M is usually a pointer, and otherwise the generics get too annoying.
+		err := doMetricsRequest[M, C](r, ctx, logger, timeout, metrics, config.Names)
 		if err != nil {
 			logger.Error("Error making metrics request", zap.Error(err))
 			goto next
-		} else if metrics == nil {
-			goto next
 		}
 
-		newMetrics(*metrics, func() {
-			logger.Info("Updated metrics", zap.Any("metrics", *metrics))
+		newMetrics(metrics, func() {
+			logger.Info("Updated metrics", zap.Any("metrics", metrics))
 		})
 
 	next:
@@ -511,14 +525,16 @@ func (r *Runner) connectToMonitorLoop(
 // Lower-level implementation functions //
 //////////////////////////////////////////
 
-// doMetricsRequest makes a single metrics request to the VM
-func (r *Runner) doMetricsRequest(
+// doMetricsRequest makes a single metrics request to the VM, writing the result into 'metrics'
+func doMetricsRequest[M core.FromPrometheus[C], C any](
+	r *Runner,
 	ctx context.Context,
 	logger *zap.Logger,
 	timeout time.Duration,
-	config core.MetricNames,
-) (*core.Metrics, error) {
-	url := fmt.Sprintf("http://%s:%d/metrics", r.podIP, r.global.config.Metrics.Port)
+	metrics M,
+	config C,
+) error {
+	url := fmt.Sprintf("http://%s:%d/metrics", r.podIP, r.global.config.Metrics.System.Port)
 
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -532,22 +548,21 @@ func (r *Runner) doMetricsRequest(
 
 	resp, err := http.DefaultClient.Do(req)
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return ctx.Err()
 	} else if err != nil {
-		return nil, fmt.Errorf("Error making request to %q: %w", url, err)
+		return fmt.Errorf("Error making request to %q: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Unsuccessful response status %d", resp.StatusCode)
+		return fmt.Errorf("Unsuccessful response status %d", resp.StatusCode)
 	}
 
-	var m core.Metrics
-	if err := core.ParseMetrics(resp.Body, config, &m); err != nil {
-		return nil, fmt.Errorf("Error parsing metrics from prometheus output: %w", err)
+	if err := core.ParseMetrics(resp.Body, config, metrics); err != nil {
+		return fmt.Errorf("Error parsing metrics from prometheus output: %w", err)
 	}
 
-	return &m, nil
+	return nil
 }
 
 func (r *Runner) doNeonVMRequest(ctx context.Context, target api.Resources) error {
