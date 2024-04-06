@@ -39,7 +39,12 @@ data:
       },
       "metrics": {
         "port": 9100,
-        "loadMetricPrefix": "host_",
+        "names": {
+          "load1": "host_load1",
+          "load5": "host_load5",
+          "memAvailable": "host_memory_available_bytes",
+          "memTotal": "host_memory_total_bytes"
+        },
         "requestTimeoutSeconds": 2,
         "secondsBetweenRequests": 5
       },

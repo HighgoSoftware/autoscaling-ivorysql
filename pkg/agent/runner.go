@@ -365,7 +365,7 @@ func (r *Runner) getMetricsLoop(
 	}
 
 	for {
-		metrics, err := r.doMetricsRequest(ctx, logger, timeout)
+		metrics, err := r.doMetricsRequest(ctx, logger, timeout, r.global.config.Metrics.Names)
 		if err != nil {
 			logger.Error("Error making metrics request", zap.Error(err))
 			goto next
@@ -516,6 +516,7 @@ func (r *Runner) doMetricsRequest(
 	ctx context.Context,
 	logger *zap.Logger,
 	timeout time.Duration,
+	config core.MetricNames,
 ) (*core.Metrics, error) {
 	url := fmt.Sprintf("http://%s:%d/metrics", r.podIP, r.global.config.Metrics.Port)
 
@@ -537,18 +538,13 @@ func (r *Runner) doMetricsRequest(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("Error receiving response body: %w", err)
-	}
-
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Unsuccessful response status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("Unsuccessful response status %d", resp.StatusCode)
 	}
 
-	m, err := core.ReadMetrics(body, r.global.config.Metrics.LoadMetricPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading metrics from prometheus output: %w", err)
+	var m core.Metrics
+	if err := core.ParseMetrics(resp.Body, config, &m); err != nil {
+		return nil, fmt.Errorf("Error parsing metrics from prometheus output: %w", err)
 	}
 
 	return &m, nil
