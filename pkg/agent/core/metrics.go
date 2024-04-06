@@ -26,6 +26,14 @@ func (m SystemMetrics) ToAPI() api.Metrics {
 	}
 }
 
+type LFCMetrics struct {
+	CacheHitsTotal   float64
+	CacheMissesTotal float64
+	CacheWritesTotal float64
+
+	ApproximateWorkingSetSizeTotal float64 // approximate_working_set_size
+}
+
 type SystemMetricNames struct {
 	Load1        string `json:"load1"`
 	Load5        string `json:"load5"`
@@ -42,6 +50,27 @@ func (n SystemMetricNames) Validate() error {
 	erc.Whenf(ec, n.Load5 == "", emptyTmpl, "load5")
 	erc.Whenf(ec, n.MemAvailable == "", emptyTmpl, "memAvailable")
 	erc.Whenf(ec, n.MemTotal == "", emptyTmpl, "memTotal")
+
+	return ec.Resolve()
+}
+
+type LFCMetricNames struct {
+	Hits   string `json:"hits"`
+	Misses string `json:"misses"`
+	Writes string `json:"writes"`
+
+	ApproximateWorkingSetSize string `json:"approximateWorkingSetSize"`
+}
+
+func (n LFCMetricNames) Validate() error {
+	ec := &erc.Collector{}
+
+	const emptyTmpl = "field %q cannot be empty"
+
+	erc.Whenf(ec, n.Hits == "", emptyTmpl, "hits")
+	erc.Whenf(ec, n.Misses == "", emptyTmpl, "misses")
+	erc.Whenf(ec, n.Writes == "", emptyTmpl, "writes")
+	erc.Whenf(ec, n.ApproximateWorkingSetSize == "", emptyTmpl, "approximateWorkingSetSize")
 
 	return ec.Resolve()
 }
@@ -70,7 +99,7 @@ func ParseMetrics[M FromPrometheus[C], C any](content io.Reader, config C, metri
 	return nil
 }
 
-//nolint:unused // used by (*SystemMetrics).fromPrometheus()
+//nolint:unused // used by (*SystemMetrics).fromPrometheus() and (*LFCMetrics).fromPrometheus()
 func extractFloatGauge(mf *promtypes.MetricFamily) (float64, error) {
 	if mf.GetType() != promtypes.MetricType_GAUGE {
 		return 0, fmt.Errorf("wrong metric type: expected %s but got %s", promtypes.MetricType_GAUGE, mf.GetType())
@@ -83,7 +112,7 @@ func extractFloatGauge(mf *promtypes.MetricFamily) (float64, error) {
 
 // Helper function to return an error for a missing metric
 //
-//nolint:unused // used by (*SystemMetrics).fromPrometheus()
+//nolint:unused // used by (*SystemMetrics).fromPrometheus() and (*LFCMetrics).fromPrometheus()
 func missingMetric(name string) error {
 	return fmt.Errorf("missing expected metric %s", name)
 }
@@ -109,6 +138,39 @@ func (m *SystemMetrics) fromPrometheus(names SystemMetricNames, mfs map[string]*
 		LoadAverage1Min: getFloat(names.Load1),
 		// Add an extra 100 MiB to account for kernel memory usage
 		MemoryUsageBytes: getFloat(names.MemTotal) - getFloat(names.MemAvailable) + 100*(1<<20),
+	}
+
+	if err := ec.Resolve(); err != nil {
+		return err
+	}
+
+	*m = tmp
+	return nil
+}
+
+// fromPrometheus implements FromPrometheus, so LFCMetrics can be used with ParseMetrics.
+//
+//nolint:unused // https://github.com/dominikh/go-tools/issues/1294
+func (m *LFCMetrics) fromPrometheus(names LFCMetricNames, mfs map[string]*promtypes.MetricFamily) error {
+	ec := &erc.Collector{}
+
+	getFloat := func(metricName string) float64 {
+		if mf := mfs[metricName]; mf != nil {
+			f, err := extractFloatGauge(mf)
+			ec.Add(err) // does nothing if err == nil
+			return f
+		} else {
+			ec.Add(missingMetric(metricName))
+			return 0
+		}
+	}
+
+	tmp := LFCMetrics{
+		CacheHitsTotal:   getFloat(names.Hits),
+		CacheMissesTotal: getFloat(names.Misses),
+		CacheWritesTotal: getFloat(names.Writes),
+
+		ApproximateWorkingSetSizeTotal: getFloat(names.ApproximateWorkingSetSize),
 	}
 
 	if err := ec.Resolve(); err != nil {

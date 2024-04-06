@@ -11,7 +11,8 @@ data:
         "computeUnit": { "vCPUs": 0.25, "mem": "1Gi" },
         "defaultConfig": {
           "loadAverageFractionTarget": 0.9,
-          "memoryUsageFractionTarget": 0.75
+          "memoryUsageFractionTarget": 0.75,
+          "enableLFCMetrics": false
         }
       },
       "billing": {
@@ -48,6 +49,17 @@ data:
           },
           "requestTimeoutSeconds": 2,
           "secondsBetweenRequests": 5
+        },
+        "lfc": {
+          "port": 9399,
+          "names": {
+            "hits": "lfc_hits",
+            "misses": "lfc_misses",
+            "writes": "lfc_writes",
+            "approximateWorkingSetSize": "lfc_approximate_working_set_size"
+          },
+          "requestTimeoutSeconds": 5,
+          "secondsBetweenRequests": 15
         }
       },
       "scheduler": {

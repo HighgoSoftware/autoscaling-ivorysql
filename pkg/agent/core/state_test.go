@@ -109,6 +109,7 @@ func Test_DesiredResourcesFromMetricsOrRequestedUpscaling(t *testing.T) {
 				DefaultScalingConfig: api.ScalingConfig{
 					LoadAverageFractionTarget: ptr(0.5),
 					MemoryUsageFractionTarget: ptr(0.5),
+					EnableLFCMetrics:          nil,
 				},
 				// these don't really matter, because we're not using (*State).NextActions()
 				NeonVMRetryWait:                    time.Second,
@@ -179,6 +180,7 @@ var DefaultInitialStateConfig = helpers.InitialStateConfig{
 		DefaultScalingConfig: api.ScalingConfig{
 			LoadAverageFractionTarget: ptr(0.5),
 			MemoryUsageFractionTarget: ptr(0.5),
+			EnableLFCMetrics:          nil,
 		},
 		NeonVMRetryWait:                    5 * time.Second,
 		PluginRequestTick:                  5 * time.Second,

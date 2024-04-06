@@ -85,6 +85,7 @@ type ScalingConfig struct {
 
 type MetricsConfig struct {
 	System MetricsSourceConfig[core.SystemMetricNames] `json:"system"`
+	LFC    MetricsSourceConfig[core.LFCMetricNames]    `json:"lfc"`
 }
 
 // MetricsConfig defines a few parameters for metrics requests to the VM
@@ -185,6 +186,10 @@ func (c *Config) validate() error {
 	ec.Add(c.Metrics.System.Names.Validate())
 	erc.Whenf(ec, c.Metrics.System.RequestTimeoutSeconds == 0, zeroTmpl, ".metrics.system.requestTimeoutSeconds")
 	erc.Whenf(ec, c.Metrics.System.SecondsBetweenRequests == 0, zeroTmpl, ".metrics.system.secondsBetweenRequests")
+	erc.Whenf(ec, c.Metrics.LFC.Port == 0, zeroTmpl, ".metrics.lfc.port")
+	ec.Add(c.Metrics.LFC.Names.Validate())
+	erc.Whenf(ec, c.Metrics.LFC.RequestTimeoutSeconds == 0, zeroTmpl, ".metrics.lfc.requestTimeoutSeconds")
+	erc.Whenf(ec, c.Metrics.LFC.SecondsBetweenRequests == 0, zeroTmpl, ".metrics.lfc.secondsBetweenRequests")
 	erc.Whenf(ec, c.Scaling.ComputeUnit.VCPU == 0, zeroTmpl, ".scaling.computeUnit.vCPUs")
 	erc.Whenf(ec, c.Scaling.ComputeUnit.Mem == 0, zeroTmpl, ".scaling.computeUnit.mem")
 	erc.Whenf(ec, c.NeonVM.RequestTimeoutSeconds == 0, zeroTmpl, ".scaling.requestTimeoutSeconds")
