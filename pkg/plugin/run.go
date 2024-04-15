@@ -13,6 +13,7 @@ import (
 	"github.com/tychoish/fun/srv"
 	"go.uber.org/zap"
 
+	vmapi "github.com/neondatabase/autoscaling/neonvm/apis/neonvm/v1"
 	"github.com/neondatabase/autoscaling/pkg/api"
 )
 
@@ -283,10 +284,10 @@ func (e *AutoscaleEnforcer) handleResources(
 	}
 
 	if lastPermit != nil {
-		cpuVerdict := makeResourceTransitioner(&node.cpu, &pod.cpu).
-			handleLastPermit(lastPermit.VCPU)
-		memVerdict := makeResourceTransitioner(&node.mem, &pod.mem).
-			handleLastPermit(lastPermit.Mem)
+		cpuVerdict := makeResourceTransitioner(&node.cpu, &pod.cpu, vmapi.MilliCPU.AsFloat64).
+			handleLastPermit(lastPermit.VCPU, pod.vm.OvercommitFactor)
+		memVerdict := makeResourceTransitioner(&node.mem, &pod.mem, api.Bytes.AsFloat64).
+			handleLastPermit(lastPermit.Mem, pod.vm.OvercommitFactor)
 		logger.Info(
 			"Handled last permit info from pod",
 			zap.Object("verdict", verdictSet{
@@ -302,10 +303,10 @@ func (e *AutoscaleEnforcer) handleResources(
 	}
 	memFactor := cu.Mem
 
-	cpuVerdict := makeResourceTransitioner(&node.cpu, &pod.cpu).
-		handleRequested(req.VCPU, startingMigration, cpuFactor)
-	memVerdict := makeResourceTransitioner(&node.mem, &pod.mem).
-		handleRequested(req.Mem, startingMigration, memFactor)
+	cpuVerdict := makeResourceTransitioner(&node.cpu, &pod.cpu, vmapi.MilliCPU.AsFloat64).
+		handleRequested(req.VCPU, startingMigration, cpuFactor, pod.vm.OvercommitFactor)
+	memVerdict := makeResourceTransitioner(&node.mem, &pod.mem, api.Bytes.AsFloat64).
+		handleRequested(req.Mem, startingMigration, memFactor, pod.vm.OvercommitFactor)
 
 	logger.Info(
 		"Handled requested resources from pod",

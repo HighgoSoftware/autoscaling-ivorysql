@@ -164,6 +164,10 @@ func (r *VirtualMachine) ValidateUpdate(old runtime.Object) error {
 		{".spec.enableAcceleration", func(v *VirtualMachine) any { return v.Spec.EnableAcceleration }},
 		{".spec.enableSSH", func(v *VirtualMachine) any { return v.Spec.EnableSSH }},
 		{".spec.initScript", func(v *VirtualMachine) any { return v.Spec.InitScript }},
+		// TODO: Maybe, in the future, we'll allow changing the overcommit factor in place.
+		// This requires some more complex behavior in the scheduler to correctly handle the
+		// updates.
+		{".spec.overcommitFactor", func(v *VirtualMachine) any { return v.Spec.OvercommitFactor }},
 	}
 
 	for _, info := range immutableFields {

@@ -190,6 +190,10 @@ type vmPodState struct {
 	// Config stores the values of per-VM settings for this VM
 	Config api.VmConfig
 
+	// OvercommitFactor stores the value of the VM's .Spec.OvercommitFactor, for consistent usage
+	// discounting after the Pod is initially added.
+	OvercommitFactor *float64
+
 	// Metrics is the most recent Metrics update we received for this pod. A nil pointer means that
 	// we have not yet received Metrics.
 	Metrics *api.Metrics
@@ -633,9 +637,15 @@ func (e *AutoscaleEnforcer) reserveResources(
 		return false, nil, fmt.Errorf("%s: %w", msg, err)
 	}
 
+	var overcommitMsg string
+
 	var add api.Resources
 	if vmInfo != nil {
 		add = vmInfo.Using()
+		if vmInfo.OvercommitFactor != nil {
+			add = add.WithOvercommitFactor(vmInfo.OvercommitFactor)
+			overcommitMsg = " (after overcommit)"
+		}
 	} else {
 		add = extractPodResources(pod)
 	}
@@ -658,12 +668,12 @@ func (e *AutoscaleEnforcer) reserveResources(
 
 		verdict := verdictSet{
 			cpu: fmt.Sprintf(
-				"need %v, %v of %v used, so %v available (%s)",
-				add.VCPU, node.cpu.Reserved, node.cpu.Total, node.remainingReservableCPU(), cpuShortVerdict,
+				"need %v%s, %v of %v used, so %v available (%s)",
+				add.VCPU, overcommitMsg, node.cpu.Reserved, node.cpu.Total, node.remainingReservableCPU(), cpuShortVerdict,
 			),
 			mem: fmt.Sprintf(
-				"need %v, %v of %v used, so %v available (%s)",
-				add.Mem, node.mem.Reserved, node.mem.Total, node.remainingReservableMem(), memShortVerdict,
+				"need %v%s, %v of %v used, so %v available (%s)",
+				add.Mem, overcommitMsg, node.mem.Reserved, node.mem.Total, node.remainingReservableMem(), memShortVerdict,
 			),
 		}
 
@@ -679,36 +689,44 @@ func (e *AutoscaleEnforcer) reserveResources(
 
 	if vmInfo != nil {
 		vmState = &vmPodState{
-			Name:           vmInfo.NamespacedName(),
-			MemSlotSize:    vmInfo.Mem.SlotSize,
-			Config:         vmInfo.Config,
-			Metrics:        nil,
-			MqIndex:        -1,
-			MigrationState: nil,
+			Name:             vmInfo.NamespacedName(),
+			MemSlotSize:      vmInfo.Mem.SlotSize,
+			Config:           vmInfo.Config,
+			OvercommitFactor: vmInfo.OvercommitFactor,
+			Metrics:          nil,
+			MqIndex:          -1,
+			MigrationState:   nil,
 		}
+
+		// abbreviations - "res" == "resources" - so we have the overcommit factor applied all the
+		// way through.
+		resCurrent := vmInfo.Using().WithOvercommitFactor(vmInfo.OvercommitFactor) // "current" not "using" because otherwise codespell complains
+		resMax := vmInfo.Max().WithOvercommitFactor(vmInfo.OvercommitFactor)
+		resMin := vmInfo.Min().WithOvercommitFactor(vmInfo.OvercommitFactor)
+
 		// initially build the resource states assuming that we're including buffer, and then update
 		// later to remove it if that turns out not to be right.
 		cpuState = podResourceState[vmapi.MilliCPU]{
-			Reserved:         vmInfo.Max().VCPU,
-			Buffer:           util.SaturatingSub(vmInfo.Max().VCPU, vmInfo.Using().VCPU),
+			Reserved:         resMax.VCPU,
+			Buffer:           util.SaturatingSub(resMax.VCPU, resCurrent.VCPU),
 			CapacityPressure: 0,
-			Min:              vmInfo.Min().VCPU,
-			Max:              vmInfo.Max().VCPU,
+			Min:              resMin.VCPU,
+			Max:              resMax.VCPU,
 		}
 		memState = podResourceState[api.Bytes]{
-			Reserved:         vmInfo.Max().Mem,
-			Buffer:           util.SaturatingSub(vmInfo.Max().Mem, vmInfo.Using().Mem),
+			Reserved:         resMax.Mem,
+			Buffer:           util.SaturatingSub(resMax.Mem, resCurrent.Mem),
 			CapacityPressure: 0,
-			Min:              vmInfo.Min().Mem,
-			Max:              vmInfo.Max().Mem,
+			Min:              resMin.Mem,
+			Max:              resMax.Mem,
 		}
 
 		migrating := util.TryPodOwnerVirtualMachineMigration(pod) != nil
 		if !vmInfo.Config.ScalingEnabled || migrating {
 			cpuState.Buffer = 0
-			cpuState.Reserved = vmInfo.Using().VCPU
+			cpuState.Reserved = resCurrent.VCPU
 			memState.Buffer = 0
-			memState.Reserved = vmInfo.Using().Mem
+			memState.Reserved = resCurrent.Mem
 		}
 	} else {
 		cpuState = podResourceState[vmapi.MilliCPU]{
@@ -836,9 +854,9 @@ func (e *AutoscaleEnforcer) unreserveResources(
 	// Mark the resources as no longer reserved
 	currentlyMigrating := ps.vm != nil && ps.vm.currentlyMigrating()
 
-	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu).
+	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu, vmapi.MilliCPU.AsFloat64).
 		handleDeleted(currentlyMigrating)
-	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem).
+	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem, api.Bytes.AsFloat64).
 		handleDeleted(currentlyMigrating)
 
 	// Delete our record of the pod
@@ -891,9 +909,9 @@ func (e *AutoscaleEnforcer) handleVMConfigUpdated(logger *zap.Logger, podName ut
 	}
 
 	if oldCfg.ScalingEnabled && !newCfg.ScalingEnabled {
-		cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu).
+		cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu, vmapi.MilliCPU.AsFloat64).
 			handleAutoscalingDisabled()
-		memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem).
+		memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem, api.Bytes.AsFloat64).
 			handleAutoscalingDisabled()
 
 		ps.node.updateMetrics(e.metrics)
@@ -933,9 +951,9 @@ func (e *AutoscaleEnforcer) handlePodStartMigration(logger *zap.Logger, podName,
 	logger = logger.With(zap.Object("virtualmachine", ps.vm.Name))
 
 	// Reset buffer to zero, remove from migration queue (if in it), and set pod's migrationState
-	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu).
+	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu, vmapi.MilliCPU.AsFloat64).
 		handleStartMigration(source)
-	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem).
+	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem, api.Bytes.AsFloat64).
 		handleStartMigration(source)
 
 	ps.node.mq.removeIfPresent(ps.vm)
@@ -1009,10 +1027,10 @@ func (e *AutoscaleEnforcer) handleUpdatedScalingBounds(logger *zap.Logger, vm *a
 		return
 	}
 
-	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu).
-		handleUpdatedLimits(vm.Cpu.Min, vm.Cpu.Max)
-	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem).
-		handleUpdatedLimits(vm.Min().Mem, vm.Max().Mem)
+	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu, vmapi.MilliCPU.AsFloat64).
+		handleUpdatedLimits(vm.Cpu.Min, vm.Cpu.Max, ps.vm.OvercommitFactor)
+	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem, api.Bytes.AsFloat64).
+		handleUpdatedLimits(vm.Min().Mem, vm.Max().Mem, ps.vm.OvercommitFactor)
 
 	ps.node.updateMetrics(e.metrics)
 
@@ -1043,9 +1061,9 @@ func (e *AutoscaleEnforcer) handleNonAutoscalingUsageChange(logger *zap.Logger, 
 		return
 	}
 
-	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu).
+	cpuVerdict := makeResourceTransitioner(&ps.node.cpu, &ps.cpu, vmapi.MilliCPU.AsFloat64).
 		handleNonAutoscalingUsageChange(vm.Using().VCPU)
-	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem).
+	memVerdict := makeResourceTransitioner(&ps.node.mem, &ps.mem, api.Bytes.AsFloat64).
 		handleNonAutoscalingUsageChange(vm.Using().Mem)
 
 	ps.node.updateMetrics(e.metrics)

@@ -103,6 +103,7 @@ func Test_DesiredResourcesFromMetricsOrRequestedUpscaling(t *testing.T) {
 					ScalingEnabled:       true,
 					ScalingConfig:        nil,
 				},
+				OvercommitFactor: nil,
 			},
 			core.Config{
 				ComputeUnit: api.Resources{VCPU: 250, Mem: 1 * slotSize},

@@ -246,11 +246,12 @@ func (s *vmPodState) dump() vmPodState {
 	}
 
 	return vmPodState{
-		Name:           s.Name,
-		MemSlotSize:    s.MemSlotSize,
-		Config:         s.Config,
-		Metrics:        metrics,
-		MqIndex:        s.MqIndex,
-		MigrationState: migrationState,
+		Name:             s.Name,
+		MemSlotSize:      s.MemSlotSize,
+		Config:           s.Config,
+		OvercommitFactor: s.OvercommitFactor, // ok to copy; it's immutable.
+		Metrics:          metrics,
+		MqIndex:          s.MqIndex,
+		MigrationState:   migrationState,
 	}
 }

@@ -48,6 +48,12 @@ const (
 	//
 	// The value of this annotation is always a JSON-encoded VirtualMachineResources object.
 	VirtualMachineResourcesAnnotation string = "vm.neon.tech/resources"
+
+	// VirtualMachineOvercommitFactorAnnotation is the annotation added to runner pods of VMs with
+	// non-nil .Spec.OvercommitFactor.
+	//
+	// The value of this annotation is always a JSON-encoded float64.
+	VirtualMachineOvercommitFactorAnnotation string = "vm.neon.tech/overcommit-factor"
 )
 
 // VirtualMachineUsage provides information about a VM's current usage. This is the type of the
@@ -137,6 +143,20 @@ type VirtualMachineSpec struct {
 	// +kubebuilder:default:=true
 	// +optional
 	EnableSSH *bool `json:"enableSSH,omitempty"`
+
+	// OvercommitFactor sets a factor by which to discount the resource usage from this VM.
+	// For example, if all VMs have an OvercommitFactor of 2.0, then twice as many VMs of the same
+	// size could be scheduled onto nodes of the same size.
+	//
+	// OvercommitFactor is INHERENTLY DANGEROUS. Setting this value greater than 1 ONLY makes sense
+	// when all your VMs are much smaller than the nodes they run on, AND you have verified that
+	// average resource usage is, in practice, significantly below what's allocated.
+	//
+	// +kubebuilder:validation:Minimum=0.5
+	// +kubebuilder:validation:Maximum=2.0
+	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +optional
+	OvercommitFactor *float64 `json:"overcommitFactor,omitempty"` // validations are just for reasonable values.
 }
 
 func (spec *VirtualMachineSpec) Resources() VirtualMachineResources {

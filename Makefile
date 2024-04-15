@@ -90,7 +90,11 @@ generate: ## Generate boilerplate DeepCopy methods, manifests, and Go client
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./neonvm/..." \
+	$(CONTROLLER_GEN) \
+		rbac:roleName=manager-role \
+		crd:allowDangerousTypes=true \
+		webhook \
+		paths="./neonvm/..." \
 		output:crd:artifacts:config=neonvm/config/crd/bases \
 		output:rbac:artifacts:config=neonvm/config/rbac \
 		output:webhook:artifacts:config=neonvm/config/webhook

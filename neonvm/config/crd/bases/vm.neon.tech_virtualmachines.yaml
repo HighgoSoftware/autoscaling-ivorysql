@@ -2521,6 +2521,18 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              overcommitFactor:
+                description: "OvercommitFactor sets a factor by which to discount
+                  the resource usage from this VM. For example, if all VMs have an
+                  OvercommitFactor of 2.0, then twice as many VMs of the same size
+                  could be scheduled onto nodes of the same size. \n OvercommitFactor
+                  is INHERENTLY DANGEROUS. Setting this value greater than 1 ONLY
+                  makes sense when all your VMs are much smaller than the nodes they
+                  run on, AND you have verified that average resource usage is, in
+                  practice, significantly below what's allocated."
+                maximum: 2
+                minimum: 0.5
+                type: number
               podResources:
                 description: ResourceRequirements describes the compute resource requirements.
                 properties:
