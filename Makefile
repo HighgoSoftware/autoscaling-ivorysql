@@ -7,6 +7,7 @@ IMG_AUTOSCALER_AGENT ?= autoscaler-agent:dev
 
 E2E_TESTS_VM_IMG ?= vm-postgres:15-bullseye
 PG16_DISK_TEST_IMG ?= pg16-disk-test:dev
+IVY3_DISK_TEST_IMG ?= ivy3-disk-test:dev
 
 ## Golang details
 GOARCH ?= $(shell go env GOARCH)
@@ -188,6 +189,10 @@ docker-build-examples: bin/vm-builder ## Build docker images for testing VMs
 docker-build-pg16-disk-test: bin/vm-builder ## Build a VM image for testing
 	./bin/vm-builder -src alpine:3.19 -dst $(PG16_DISK_TEST_IMG) -spec vm-examples/pg16-disk-test/image-spec.yaml
 
+.PHONY: docker-build-ivy3-disk-test
+docker-build-ivy3-disk-test: bin/vm-builder ## Build an IvorySQL VM image for testing
+	./bin/vm-builder -src alpine:3.19 -dst $(IVY3_DISK_TEST_IMG) -spec vm-examples/ivy3-disk-test/image-spec.yaml
+
 #.PHONY: docker-push
 #docker-push: ## Push docker image with the controller.
 #	docker push ${IMG_CONTROLLER}
@@ -332,8 +337,16 @@ load-pg16-disk-test: check-local-context kubectl kind k3d ## Load the pg16-disk-
 	@if [ $$($(KUBECTL) config current-context) = k3d-$(CLUSTER_NAME) ]; then $(K3D) image import $(PG16_DISK_TEST_IMG) --cluster $(CLUSTER_NAME) --mode direct; fi
 	@if [ $$($(KUBECTL) config current-context) = kind-$(CLUSTER_NAME) ]; then $(KIND) load docker-image $(PG16_DISK_TEST_IMG) --name $(CLUSTER_NAME); fi
 
+.PHONY: load-ivy3-disk-test
+load-ivy3-disk-test: check-local-context kubectl kind k3d ## Load the ivy3-disk-test VM image to the kind/k3d cluster.
+	@if [ $$($(KUBECTL) config current-context) = k3d-$(CLUSTER_NAME) ]; then $(K3D) image import $(IVY3_DISK_TEST_IMG) --cluster $(CLUSTER_NAME) --mode direct; fi
+	@if [ $$($(KUBECTL) config current-context) = kind-$(CLUSTER_NAME) ]; then $(KIND) load docker-image $(IVY3_DISK_TEST_IMG) --name $(CLUSTER_NAME); fi
+
 .PHONY: pg16-disk-test
 pg16-disk-test: docker-build-pg16-disk-test load-pg16-disk-test ## Build and push the pg16-disk-test VM test image to the kind/k3d cluster.
+
+.PHONY: ivy3-disk-test
+ivy3-disk-test: docker-build-ivy3-disk-test load-ivy3-disk-test ## Build and push the ivy3-disk-test VM test image to the kind/k3d cluster.
 
 .PHONY: kind-load
 kind-load: kind # Push docker images to the kind cluster.
